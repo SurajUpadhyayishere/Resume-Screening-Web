@@ -7,3 +7,5 @@ ML_projects.egg-info/requires.txt
 ML_projects.egg-info/top_level.txt
 src/__init__.py
 src/components/__init__.py
+src/pipelines/__init__.py
+src/pipelines/app.py

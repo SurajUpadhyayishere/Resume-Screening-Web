@@ -1,0 +1,116 @@
+from src.components import main
+import streamlit as st
+import pickle
+import docx   # extract the text from document
+import PyPDF2 # extract the text from pdf
+import re
+
+# Load pre-trained model and TF-IDF vectorizer (ensure these are saved  earlier)
+svc_model = pickle.load(open('clf.pkl','rb'))
+tfidf = pickle.load(open('tfidf.pkl','rb'))
+le = pickle.load(open('encoder.pkl','rb'))
+
+
+# function to clean resume text
+def cleanResume(txt):
+    cleanText = re.sub('http\S+\s', ' ', txt)
+    cleanText = re.sub('RT|cc', ' ', cleanText)
+    cleanText = re.sub('#\S+\s', ' ', cleanText)
+    cleanText = re.sub('@\S+', '  ', cleanText)  
+    cleanText = re.sub('[%s]' % re.escape("""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""), ' ', cleanText)
+    cleanText = re.sub(r'[^\x00-\x7f]', ' ', cleanText) 
+    cleanText = re.sub('\s+', ' ', cleanText)
+    return cleanText
+
+# function to extract text from the pdf
+def extract_text_from_pdf(file):
+    """this function is extract text from the pdf"""
+    pdf_reader = PyPDF2.PdfReader(file)
+    text = ''
+    for page in pdf_reader.pages:
+        text += page.extract_text()
+    return text
+
+# function to extract text from the docx
+def extract_text_from_docx(file):
+    """this function extract text from docx"""
+    doc = docx.Document(file)
+    text = ''
+    for paragraph in doc.paragraphs:
+        text += paragraph.text + '\n'
+    return text
+
+# function to extract text from TXT with explicit encoding handling
+def extract_text_from_text(file):
+    #try using utf-8 encoding for reading the text file
+    try:
+        text = file.read().decode('utf-8')
+    except UnicodeDecodeError:
+        # In case utf-8 fails, try 'latin-1' encoding as a fallback
+        text = file.read().decode('latin-1')
+    return text
+
+
+# Function to handle file upload and extraction
+def handle_file_upload(upload_file):
+    file_extension = upload_file.name.split('.')[-1].lower()
+    if file_extension == 'pdf':
+        text = extract_text_from_pdf(upload_file)
+    elif file_extension == 'docx':
+        text = extract_text_from_docx(upload_file)
+    elif file_extension == 'txt':
+        text = extract_text_from_text(upload_file)
+    else:
+        raise ValueError("Unsupported file type: Please upload a PDF,DOCX or TXT file.")
+    return text
+
+
+# function to predict this category of a resume
+def pred(input_resume):
+    #preprocess the input text
+    cleaned_text = cleanResume(input_resume)
+
+    #Vectorize the cleaned text using the same TF-IDF vectorizer used during training
+    vectorized_text = tfidf.transform([cleaned_text])
+
+    #Convert sparse matrix to dense
+    vectorized_text = vectorized_text.toarray()
+
+    #Prediction
+    prediction_category = svc_model.Prediction(vectorized_text)
+
+    #get name of predicted category
+    predict_category_name = le.inverse_transform(prediction_category)
+
+    return predict_category_name[0]   #Return the category name
+
+
+# streamlit web layout
+def main():
+    st.set_page_config(page_title="Resume Category Prediction", page_icon="📄", layout="wide")
+
+    st.title("Resume Category Prediction Web")
+    st.markdown("Upload a resume in PDF, TXT, or DOCX format and get the predicted job category.")
+
+    # File upload section
+    uploaded_file = st.file_uploader("Upload a Resume", type=["pdf", "docs", "txt"])
+
+    if uploaded_file is not None:
+        try:
+            # Extract text from the uploaded file
+            resume_text = handle_file_upload(uploaded_file)
+            st.write("Successfully extracted text from uploaded resume")
+            
+            # Display extracted text (optional)
+            # st.text_area("Extracted Resume Text", resume_text, height=300)
+
+            # Make prediction
+            st.subheader("Predicted Category")
+            category = pred(resume_text)
+            st.write(f"The predicted category of the uploaded resume is: **{category}**")
+
+        except Exception as e:
+            st.error(f"Error processing the file: {str(e)}")
+
+if __name__ == "__main__":
+    main()
